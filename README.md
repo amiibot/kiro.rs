@@ -186,20 +186,52 @@ docker pull myuan6/kiro-rs:v1.1.31
 
 **docker-compose 方式**
 
-```bash
-# 准备 config/config.json 和 config/credentials.json
-docker compose up -d
-```
-
-> 注意：仓库自带的 `docker-compose.yml` 默认拉取 `ghcr.io/hank9999/kiro-rs:latest`（**不含本 fork 的修复**）。要用 fork 版镜像，把 `image:` 改为 `myuan6/kiro-rs:latest`，或改用 `build: .` 本地构建。
-
-**本地构建**
+仓库自带的 `docker-compose.yml` 默认使用当前仓库本地构建，已包含“启动前从 GitHub 拉取 `config.json`”所需的入口脚本。
 
 ```bash
+# 至少准备 config/credentials.json
+# 如果不启用 GitHub 同步，还需要准备 config/config.json
 docker compose up -d --build
 ```
 
-需要将 `config.json` 和 `credentials.json` 挂载到容器中，具体参见 `docker-compose.yml`。
+如果你想使用已发布镜像而不是本地构建，可把 `docker-compose.yml` 里的 `build: .` 改成对应的 `image:`。
+
+需要将配置目录挂载到容器中，具体参见 `docker-compose.yml`。
+
+**启动前从 GitHub 私有仓库拉取 `config.json`（可选）**
+
+如果你不想把 `config.json` 直接放在宿主机上，可以在容器启动前通过 GitHub Contents API 从私有仓库拉取。当前仅支持同步 `config.json`，`credentials.json` 仍需本地挂载或通过 Admin API 管理。
+
+启用方式：
+
+```bash
+docker run -d \
+  -p 8990:8990 \
+  -v "$(pwd)/config:/app/config" \
+  -e GITHUB_CONFIG_SYNC=1 \
+  -e GITHUB_TOKEN=ghp_xxx \
+  -e GITHUB_REPO=yourname/your-private-repo \
+  -e GITHUB_CONFIG_PATH=config/config.json \
+  -e GITHUB_REF=main \
+  myuan6/kiro-rs:latest
+```
+
+环境变量说明：
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `GITHUB_CONFIG_SYNC` | 是 | 设为 `1` 或 `true` 时启用启动前拉取 |
+| `GITHUB_TOKEN` | 是 | GitHub Token，建议使用仅有目标仓库 `Contents: Read` 权限的 fine-grained PAT |
+| `GITHUB_REPO` | 是 | 仓库名，格式 `owner/repo` |
+| `GITHUB_CONFIG_PATH` | 是 | 仓库内 `config.json` 的路径，例如 `config/config.json` |
+| `GITHUB_REF` | 否 | 分支、tag 或 commit，默认使用仓库默认分支 |
+
+注意：
+
+1. 拉取发生在容器启动前；若 GitHub 下载失败，容器会直接启动失败，便于尽早发现配置问题。
+2. 拉取后的文件会写入 `/app/config/config.json`，随后仍按原有方式启动 `kiro-rs`。
+3. 这个机制不会同步 `credentials.json`；如需凭据，请继续挂载本地文件或在启动后通过 Admin API 添加。
+4. 如果同时挂载了本地 `config.json`，启用该功能后会被远端内容覆盖。
 
 ## 配置详解
 
